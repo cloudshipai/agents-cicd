@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+      - "22:22"  # INSECURE: Exposing SSH
+    environment:
+      # INSECURE: Hardcoded secrets in compose file
+      - DATABASE_URL=mysql://admin:password123@db:3306/demo
+      - API_KEY=sk-1234567890abcdef1234567890abcdef
+      - JWT_SECRET=my-super-secret-jwt-key
+    volumes:
+      # INSECURE: Mounting host filesystem
+      - /:/host:rw
+      - .:/app
+    # INSECURE: Running in privileged mode
+    privileged: true
+    # INSECURE: Adding dangerous capabilities
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    # INSECURE: No restart policy
+    networks:
+      - demo
+
+  db:
+    image: mysql:5.7  # INSECURE: Older version with known vulnerabilities
+    environment:
+      # INSECURE: Hardcoded database credentials
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: demo
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: password123
+    ports:
+      # INSECURE: Exposing database to host
+      - "3306:3306"
+    volumes:
+      # INSECURE: No volume encryption
+      - db_data:/var/lib/mysql
+    # INSECURE: Running as root (default)
+    networks:
+      - demo
+
+  redis:
+    image: redis  # INSECURE: Latest tag, no auth
+    ports:
+      # INSECURE: Exposing Redis without auth
+      - "6379:6379"
+    # INSECURE: No password protection
+    networks:
+      - demo
+
+volumes:
+  db_data:
+    # INSECURE: No encryption specified
+
+networks:
+  demo:
+    # INSECURE: Default network configuration

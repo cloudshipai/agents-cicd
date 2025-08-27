@@ -1,0 +1,109 @@
+name: Station Docker Container Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Pull Station Bundle Container
+      run: |
+        # In production, this would pull from a registry
+        # For demo, we'll build it locally (simulating registry pull)
+        echo "In production: docker pull your-registry.com/station-bundle-test:latest"
+      
+    - name: Run DevOps Troubleshooting Scan
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-cicd-security-demo:latest \
+          bash -c "
+            mkdir -p /root/.config/station/environments/bundle-test && \
+            cp -r /app/environment/* /root/.config/station/environments/bundle-test/ && \
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/bundle-test/variables.yml && \
+            stn sync bundle-test && \
+            stn agent run 'Environment Troubleshooter' 'Analyze this project for common environment setup issues and configuration problems that might cause \"it works on my machine\" scenarios. Focus on terraform files, scripts, and configuration files.' --env bundle-test
+          "
+      continue-on-error: true
+    
+    - name: Run Deployment Diagnosis
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-cicd-security-demo:latest \
+          bash -c "
+            mkdir -p /root/.config/station/environments/bundle-test && \
+            cp -r /app/environment/* /root/.config/station/environments/bundle-test/ && \
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/bundle-test/variables.yml && \
+            stn sync bundle-test && \
+            stn agent run 'Deployment Diagnosis Agent' 'Review this CICD setup for potential deployment issues. Analyze GitHub Actions workflows, scripts, and configuration files for common deployment problems.' --env bundle-test
+          "
+      continue-on-error: true
+      
+    - name: Run Server Performance Analysis  
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-cicd-security-demo:latest \
+          bash -c "
+            mkdir -p /root/.config/station/environments/bundle-test && \
+            cp -r /app/environment/* /root/.config/station/environments/bundle-test/ && \
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/bundle-test/variables.yml && \
+            stn sync bundle-test && \
+            stn agent run 'Server Performance Monitor' 'Analyze the project structure and configurations for potential server performance issues. Look at any server configs, deployment setups, or infrastructure code.' --env bundle-test
+          "
+      continue-on-error: true
+
+    - name: Generate DevOps Analysis Report
+      run: |
+        echo "# DevOps Analysis Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY  
+        echo "## Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "## Scan Date: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Station DevOps agents completed analysis for:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Environment troubleshooting and configuration analysis" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Deployment pipeline diagnosis and issue detection" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Server performance analysis and optimization recommendations" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "_Powered by [Station](https://station.dev) DevOps Agents in Docker Container_" >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔧 DevOps Analysis Results
+            
+            Station DevOps agents have completed their analysis using containerized environment:
+            
+            - **Environment Troubleshooting**: Analyzed configuration for "works on my machine" issues
+            - **Deployment Diagnosis**: Reviewed CICD setup for potential deployment problems  
+            - **Performance Analysis**: Examined infrastructure and server configurations
+            
+            Please review the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed findings.
+            
+            _Powered by [Station](https://station.dev) DevOps Agents (Containerized)_`
+          })

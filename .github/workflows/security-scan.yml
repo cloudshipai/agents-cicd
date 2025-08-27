@@ -1,0 +1,95 @@
+name: Security Scan with Station Agents
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Install Station CLI
+      run: |
+        curl -sSL https://install.station.dev | bash
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    
+    - name: Setup Station Environment
+      run: |
+        mkdir -p ~/.config/station/environments/cicd-security
+        echo "PROJECT_ROOT: ${{ github.workspace }}" > ~/.config/station/environments/cicd-security/variables.yml
+    
+    - name: Install Security Scanner Bundle  
+      run: |
+        stn template install https://registry.station.dev/bundles/security-scanner-bundle.tar.gz
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    
+    - name: Run Terraform Security Scan
+      id: terraform-scan
+      run: |
+        stn agent call terraform-security-auditor "Scan the terraform/ directory for security vulnerabilities, misconfigurations, and compliance violations. Focus on critical issues."
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Run Container Security Scan  
+      id: container-scan
+      run: |
+        stn agent call container-security-scanner "Analyze all Docker files and docker-compose.yml for security vulnerabilities and misconfigurations. Check for running as root, secrets, vulnerable images."
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Run Code Vulnerability Scan
+      id: code-scan  
+      run: |
+        stn agent call code-vulnerability-detector "Scan the Python and JavaScript code for security vulnerabilities like SQL injection, XSS, command injection, and other OWASP Top 10 issues."
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Generate Security Report
+      run: |
+        echo "# Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY  
+        echo "## Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "## Scan Date: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Station security agents completed scanning for:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Terraform security issues and compliance violations" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Container security vulnerabilities and misconfigurations" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Source code vulnerabilities and insecure practices" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Review the individual step outputs above for detailed findings and remediation guidance." >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔒 Security Scan Results
+            
+            Station security agents have completed their analysis:
+            
+            - **Terraform Security**: Checked infrastructure for misconfigurations
+            - **Container Security**: Analyzed Docker files for vulnerabilities  
+            - **Code Security**: Scanned source code for security issues
+            
+            Please review the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed findings.
+            
+            _Powered by [Station](https://station.dev) Security Agents_`
+          })

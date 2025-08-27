@@ -1,0 +1,12 @@
+# INSECURE: Dependencies with known vulnerabilities
+
+Flask==2.0.1  # Has known security vulnerabilities
+requests==2.25.1  # Older version with vulnerabilities  
+Pillow==8.2.0  # Known CVEs
+PyYAML==5.4.1  # Unsafe loading vulnerabilities
+Jinja2==2.11.3  # SSTI vulnerabilities
+urllib3==1.26.5  # Various security issues
+cryptography==3.4.7  # Older version with vulnerabilities
+lxml==4.6.3  # XXE vulnerabilities
+paramiko==2.7.2  # SSH security issues
+pycryptodome==3.10.1  # Weak crypto implementations
