@@ -1,0 +1,322 @@
+name: 🛡️ Station DevOps Security Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test (leave empty for default)'
+        required: false
+        default: 'devops-simple'
+        type: string
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      packages: read
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: 🏗️ Build Station DevOps Container
+      run: |
+        # Create the devops-simple environment structure
+        mkdir -p station-env/environments/devops-simple/agents
+        
+        # Copy environment config
+        cat > station-env/environments/devops-simple/template.json << 'EOF'
+        {
+          "name": "devops-simple",
+          "description": "Simple DevOps bundle with 2 focused agents - Security Scanner and Terraform Auditor",
+          "mcpServers": {
+            "filesystem": {
+              "command": "npx",
+              "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem@latest", 
+                "{{ .PROJECT_ROOT }}"
+              ]
+            },
+            "security-tools": {
+              "command": "ship",
+              "args": [
+                "mcp",
+                "gitleaks",
+                "--stdio"
+              ]
+            },
+            "terraform-tools": {
+              "command": "ship",
+              "args": [
+                "mcp",
+                "checkov",
+                "--stdio"
+              ]
+            }
+          }
+        }
+        EOF
+        
+        # Copy variables
+        echo 'PROJECT_ROOT: /workspace' > station-env/environments/devops-simple/variables.yml
+        
+        # Copy agent configs
+        cat > "station-env/environments/devops-simple/agents/Security Scanner.prompt" << 'EOF'
+        ---
+        name: Security Scanner
+        description: Focused security scanning agent - detects secrets and basic security issues in repositories
+        model: gpt-4o-mini
+        temperature: 0.1
+        max_steps: 5
+        ---
+
+        You are a focused security scanning agent with access to gitleaks for secret detection and filesystem access for code analysis.
+
+        ## Your Mission:
+        Perform targeted security scanning of the repository:
+
+        1. **Secret Detection**: Use gitleaks to scan for exposed credentials, API keys, and secrets
+        2. **File Analysis**: Examine sensitive configuration files and scripts
+        3. **Quick Security Assessment**: Identify obvious security issues in code
+
+        ## Process:
+        1. Start with gitleaks scan to find any exposed secrets
+        2. Look for common security anti-patterns in configuration files
+        3. Report findings with severity levels and remediation steps
+
+        ## Report Format:
+        ```markdown
+        # Security Scan Results
+
+        ## 🚨 Critical Issues Found: X
+        [List critical security issues with file:line references]
+
+        ## ⚠️ Medium Issues Found: Y  
+        [List medium priority security issues]
+
+        ## ✅ Security Checks Passed: Z
+        [List successful security validations]
+
+        ## 🛠️ Remediation Steps
+        1. [Specific action items with commands/code examples]
+        ```
+
+        Focus on actionable findings that developers can fix immediately. Keep scans fast and targeted.
+        EOF
+
+        cat > "station-env/environments/devops-simple/agents/Terraform Auditor.prompt" << 'EOF'
+        ---
+        name: Terraform Auditor
+        description: Infrastructure security auditor - analyzes Terraform configurations for security misconfigurations and best practices
+        model: gpt-4o-mini
+        temperature: 0.1
+        max_steps: 5
+        ---
+
+        You are a Terraform security specialist with access to checkov for infrastructure as code security analysis and filesystem access for configuration review.
+
+        ## Your Mission:
+        Analyze Terraform configurations for security and compliance:
+
+        1. **IaC Security Scanning**: Use checkov to scan Terraform files for security misconfigurations
+        2. **Configuration Review**: Examine terraform files for best practices violations  
+        3. **Compliance Assessment**: Check against common security frameworks (CIS, AWS Security)
+
+        ## Process:
+        1. Discover Terraform files in the repository (.tf, .tfvars)
+        2. Run checkov security scans on discovered configurations
+        3. Analyze results and provide prioritized remediation guidance
+
+        ## Report Format:
+        ```markdown  
+        # Terraform Security Audit
+
+        ## 📁 Files Analyzed: X
+        [List of terraform files scanned]
+
+        ## 🚨 Critical Security Issues: Y
+        [High-severity misconfigurations that create security risks]
+
+        ## ⚠️ Security Recommendations: Z
+        [Best practices improvements and compliance issues]
+
+        ## ✅ Compliant Configurations: A
+        [Security checks that passed successfully]
+
+        ## 🛠️ Remediation Priority
+        1. **High Priority**: [Critical security fixes]
+        2. **Medium Priority**: [Best practice improvements]
+        ```
+
+        Focus on practical security improvements for infrastructure configurations. Provide specific code examples for fixes.
+        EOF
+
+        # Build the container using stn build
+        docker run --rm -v $(pwd)/station-env:/config -v /var/run/docker.sock:/var/run/docker.sock \
+          ghcr.io/cloudshipai/station:latest \
+          stn build env devops-simple --provider openai --model gpt-4o-mini --ship || \
+        docker build -t station-devops-simple:latest .
+        
+    - name: 🔍 Run Security Scanner Agent
+      id: security-scan
+      run: |
+        echo "=== Running Security Scanner ===" | tee -a results.log
+        
+        RESULT=$(docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-devops-simple:latest \
+          bash -c "
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
+            stn sync default -i=false > sync.log 2>&1 && \
+            stn agent run 'Security Scanner' 'Scan this repository for secrets, API keys, and security issues. Use gitleaks and provide detailed findings with file locations.' --env default 2>&1
+          " | tee -a results.log)
+        
+        # Extract the structured result section
+        echo "$RESULT" | sed -n '/📋 Execution Results/,/Token Usage:/p' > security-results.txt
+        echo "SECURITY_RESULT<<EOF" >> $GITHUB_OUTPUT
+        cat security-results.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Extract just the agent's analysis
+        echo "$RESULT" | sed -n '/Result:/,/Token Usage:/p' | sed '1d;$d' > security-analysis.txt
+        echo "SECURITY_ANALYSIS<<EOF" >> $GITHUB_OUTPUT
+        cat security-analysis.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+      continue-on-error: false
+      
+    - name: 🏗️ Run Terraform Auditor Agent
+      id: terraform-scan
+      run: |
+        echo "=== Running Terraform Auditor ===" | tee -a results.log
+        
+        RESULT=$(docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-devops-simple:latest \
+          bash -c "
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
+            stn sync default -i=false > sync.log 2>&1 && \
+            stn agent run 'Terraform Auditor' 'Analyze Terraform configurations for security issues. Use checkov and provide detailed findings with remediation steps.' --env default 2>&1
+          " | tee -a results.log)
+        
+        # Extract the structured result section
+        echo "$RESULT" | sed -n '/📋 Execution Results/,/Token Usage:/p' > terraform-results.txt
+        echo "TERRAFORM_RESULT<<EOF" >> $GITHUB_OUTPUT
+        cat terraform-results.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Extract just the agent's analysis
+        echo "$RESULT" | sed -n '/Result:/,/Token Usage:/p' | sed '1d;$d' > terraform-analysis.txt
+        echo "TERRAFORM_ANALYSIS<<EOF" >> $GITHUB_OUTPUT
+        cat terraform-analysis.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+      continue-on-error: true
+
+    - name: 📊 Generate Security Report Summary
+      run: |
+        echo "# 🛡️ Station DevOps Security Audit Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Execution Summary" >> $GITHUB_STEP_SUMMARY  
+        echo "- **Repository**: \`${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "## 🔍 Security Scans Completed" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔒 Security Scanner Results" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.security-scan.outputs.SECURITY_RESULT }}" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 🏗️ Terraform Auditor Results" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.terraform-scan.outputs.TERRAFORM_RESULT }}" >> $GITHUB_STEP_SUMMARY  
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "## 🛠️ Tools Used" >> $GITHUB_STEP_SUMMARY
+        echo "- **gitleaks**: Secret detection (4 tools)" >> $GITHUB_STEP_SUMMARY
+        echo "- **checkov**: Infrastructure security (10 tools)" >> $GITHUB_STEP_SUMMARY
+        echo "- **filesystem**: Code analysis (14 tools)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "_Powered by [Station DevOps Platform](https://station.dev) 🚀_" >> $GITHUB_STEP_SUMMARY
+        
+    - name: 💬 Comment PR with Detailed Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const securityResult = `${{ steps.security-scan.outputs.SECURITY_RESULT }}`;
+          const securityAnalysis = `${{ steps.security-scan.outputs.SECURITY_ANALYSIS }}`;
+          const terraformResult = `${{ steps.terraform-scan.outputs.TERRAFORM_RESULT }}`;
+          const terraformAnalysis = `${{ steps.terraform-scan.outputs.TERRAFORM_ANALYSIS }}`;
+          
+          const comment = `## 🛡️ Station DevOps Security Audit Complete
+          
+          **Automated security analysis has been completed for this PR using Station DevOps agents.**
+          
+          ### 🔒 Security Scanner Results
+          \`\`\`
+          ${securityResult}
+          \`\`\`
+          
+          **Security Analysis:**
+          ${securityAnalysis}
+          
+          ---
+          
+          ### 🏗️ Terraform Security Auditor Results  
+          \`\`\`
+          ${terraformResult}
+          \`\`\`
+          
+          **Terraform Analysis:**
+          ${terraformAnalysis}
+          
+          ---
+          
+          ### 🔧 Tools Used
+          - **Secret Detection**: gitleaks for exposed credentials
+          - **Infrastructure Security**: checkov for Terraform analysis  
+          - **Total Tools**: 28 security and analysis tools
+          
+          ### 📊 Summary
+          This automated security audit was performed using [Station DevOps Platform](https://station.dev) with Ship CLI security tools. The agents analyzed your code for:
+          - 🔍 Exposed secrets and API keys
+          - 🏗️ Infrastructure security misconfigurations
+          - 📋 Security best practices compliance
+          
+          **Review the detailed findings above and address any critical or high-priority issues before merging.**
+          
+          _Automated by Station DevOps Security Platform_ 🚀`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: 📁 Upload Detailed Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-audit-results
+        path: |
+          results.log
+          security-results.txt
+          security-analysis.txt  
+          terraform-results.txt
+          terraform-analysis.txt
