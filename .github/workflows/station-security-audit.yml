@@ -36,13 +36,14 @@ jobs:
         
         RESULT=$(docker run --rm \
           -v ${{ github.workspace }}:/workspace \
+          -w /workspace \
           -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
           -e PROJECT_ROOT="/workspace" \
           epuerta18/station-devops-simple:latest \
           bash -c "
             echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
             stn sync default -i=false && \
-            stn agent run 'Security Scanner' 'Scan this repository for secrets, API keys, and security issues. Use gitleaks to detect exposed credentials in .env and other files.' --env default
+            stn agent run 'Security Scanner' 'Use __list_directory with path \"/workspace\" to see files, then use __gitleaks_dir with path \"/workspace\" to scan for secrets.' --env default
           " | tee -a results.log)
         
         # Extract the structured result section  
@@ -65,13 +66,14 @@ jobs:
         
         RESULT=$(docker run --rm \
           -v ${{ github.workspace }}:/workspace \
+          -w /workspace \
           -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
           -e PROJECT_ROOT="/workspace" \
           epuerta18/station-devops-simple:latest \
           bash -c "
             echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
             stn sync default -i=false && \
-            stn agent run 'Terraform Auditor' 'Analyze Terraform configurations in the terraform/ directory for security issues. Use checkov to identify misconfigurations like public S3 buckets, open security groups, unencrypted databases.' --env default
+            stn agent run 'Terraform Auditor' 'Use __directory_tree with path \"/workspace\" to explore structure, then use __checkov_dir with path \"/workspace/terraform\" to scan Terraform files.' --env default
           " | tee -a results.log)
         
         # Extract the structured result section
