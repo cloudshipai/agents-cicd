@@ -26,150 +26,65 @@ jobs:
     - name: 🐳 Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    - name: 🏗️ Use Local Station Container
+    - name: 🐳 Pull Real Station DevOps Container  
       run: |
-        # Use the container we built locally that has the real security tools
-        # For now we'll use direct security tool execution since we have the vulnerable content
-        echo "Using direct security tool execution against vulnerable repository content"
+        # Use the real Station container we built with Ship CLI and security tools
+        docker pull ghcr.io/cloudshipai/station-devops-simple:latest || echo "Container not available, will build locally"
+        docker tag ghcr.io/cloudshipai/station-devops-simple:latest station-devops-simple:latest || echo "Using local container"
         
-    - name: 🔍 Run Security Scanner Agent  
+    - name: 🔍 Run Security Scanner Agent
       id: security-scan
       run: |
-        echo "=== Running Security Scanner Against Vulnerable Repository ===" | tee -a results.log
+        echo "=== Running Security Scanner Agent with Station ===" | tee -a results.log
         
-        # Install gitleaks for real secret scanning
-        curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64.tar.gz | tar -xz
-        chmod +x gitleaks
+        RESULT=$(docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-devops-simple:latest \
+          bash -c "
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
+            stn sync default -i=false && \
+            stn agent run 'Security Scanner' 'Scan this repository for secrets, API keys, and security issues. Use gitleaks to detect exposed credentials in .env and other files.' --env default
+          " | tee -a results.log)
         
-        # Generate structured results in Station format
-        START_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-        RUN_ID=1
-        
-        echo "🚀 Executing agent 'Security Scanner' - Station DevOps Platform" | tee -a results.log
-        echo "📋 Task: Scan repository for secrets, API keys, and security issues" | tee -a results.log
-        echo "" | tee -a results.log
-        echo "📋 Execution Results" | tee -a results.log
-        echo "Run ID: $RUN_ID" | tee -a results.log  
-        echo "Status: completed" | tee -a results.log
-        echo "Started: $START_TIME" | tee -a results.log
-        echo "" | tee -a results.log
-        echo "Result: Running comprehensive security scan..." | tee -a results.log
-        echo "" | tee -a results.log
-        
-        # Run actual gitleaks scan
-        echo "# Security Scan Results" | tee -a results.log security-analysis.txt
-        echo "" | tee -a results.log security-analysis.txt
-        
-        SECRETS_COUNT=0
-        if ./gitleaks detect --source . --no-git -v 2>&1 | tee gitleaks.log; then
-          echo "## 🚨 Critical Issues Found: 0" | tee -a results.log security-analysis.txt
-          echo "No secrets detected by gitleaks" | tee -a results.log security-analysis.txt
-        else
-          SECRETS_COUNT=$(grep -c "leak" gitleaks.log 2>/dev/null || echo "0")
-          echo "## 🚨 Critical Issues Found: $SECRETS_COUNT" | tee -a results.log security-analysis.txt
-          echo "" | tee -a results.log security-analysis.txt
-          echo "### Exposed Secrets:" | tee -a results.log security-analysis.txt
-          cat gitleaks.log | grep -A2 -B2 "leak" | head -20 | tee -a results.log security-analysis.txt
-        fi
-        
-        echo "" | tee -a results.log security-analysis.txt
-        echo "## ⚠️ Security Issues Analysis:" | tee -a results.log security-analysis.txt
-        echo "- **Terraform files**: $(find . -name '*.tf' | wc -l) files found" | tee -a results.log security-analysis.txt
-        echo "- **Environment files**: $(find . -name '.env*' | wc -l) files found" | tee -a results.log security-analysis.txt
-        echo "- **Python files**: $(find . -name '*.py' | wc -l) files found" | tee -a results.log security-analysis.txt
-        echo "- **Docker files**: $(find . -name 'Dockerfile*' -o -name 'docker-compose*.yml' | wc -l) files found" | tee -a results.log security-analysis.txt
-        echo "" | tee -a results.log security-analysis.txt
-        echo "## 🛠️ Remediation Steps:" | tee -a results.log security-analysis.txt
-        echo "1. Remove all hardcoded secrets from .env file" | tee -a results.log security-analysis.txt
-        echo "2. Use environment variables or secret management systems" | tee -a results.log security-analysis.txt  
-        echo "3. Add .env to .gitignore if not already present" | tee -a results.log security-analysis.txt
-        echo "4. Rotate all exposed API keys and tokens" | tee -a results.log security-analysis.txt
-        
-        END_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-        echo "" | tee -a results.log
-        echo "Completed: $END_TIME (took ~30s)" | tee -a results.log
-        echo "Token Usage: Input tokens: 245, Output tokens: 456" | tee -a results.log
-        
-        # Set outputs for PR comments
+        # Extract the structured result section  
+        echo "$RESULT" | sed -n '/📋 Execution Results/,/Token Usage:/p' > security-results.txt
         echo "SECURITY_RESULT<<EOF" >> $GITHUB_OUTPUT
-        sed -n '/📋 Execution Results/,/Token Usage:/p' results.log >> $GITHUB_OUTPUT
+        cat security-results.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
         
+        # Extract just the agent's analysis
+        echo "$RESULT" | sed -n '/Result:/,/Token Usage:/p' | sed '1d;$d' > security-analysis.txt
         echo "SECURITY_ANALYSIS<<EOF" >> $GITHUB_OUTPUT
         cat security-analysis.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
       continue-on-error: false
       
     - name: 🏗️ Run Terraform Auditor Agent
-      id: terraform-scan  
+      id: terraform-scan
       run: |
-        echo "=== Running Terraform Auditor Against Vulnerable Infrastructure ===" | tee -a results.log
+        echo "=== Running Terraform Auditor Agent with Station ===" | tee -a results.log
         
-        # Install checkov for real Terraform security scanning
-        pip3 install checkov
+        RESULT=$(docker run --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e PROJECT_ROOT="/workspace" \
+          station-devops-simple:latest \
+          bash -c "
+            echo 'PROJECT_ROOT: /workspace' > /root/.config/station/environments/default/variables.yml && \
+            stn sync default -i=false && \
+            stn agent run 'Terraform Auditor' 'Analyze Terraform configurations in the terraform/ directory for security issues. Use checkov to identify misconfigurations like public S3 buckets, open security groups, unencrypted databases.' --env default
+          " | tee -a results.log)
         
-        # Generate structured results in Station format
-        START_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-        RUN_ID=2
-        
-        echo "🚀 Executing agent 'Terraform Auditor' - Station DevOps Platform" | tee -a results.log
-        echo "📋 Task: Analyze Terraform configurations for security misconfigurations" | tee -a results.log
-        echo "" | tee -a results.log
-        echo "📋 Execution Results" | tee -a results.log
-        echo "Run ID: $RUN_ID" | tee -a results.log
-        echo "Status: completed" | tee -a results.log
-        echo "Started: $START_TIME" | tee -a results.log
-        echo "" | tee -a results.log
-        echo "Result: Running Terraform security analysis..." | tee -a results.log
-        echo "" | tee -a results.log
-        
-        # Run actual checkov scan
-        echo "# Terraform Security Audit" | tee -a results.log terraform-analysis.txt
-        echo "" | tee -a results.log terraform-analysis.txt
-        
-        TF_FILES=$(find . -name '*.tf' | wc -l)
-        echo "## 📁 Files Analyzed: $TF_FILES" | tee -a results.log terraform-analysis.txt
-        find . -name '*.tf' | head -5 | tee -a results.log terraform-analysis.txt
-        echo "" | tee -a results.log terraform-analysis.txt
-        
-        # Run checkov and capture results
-        if checkov -d ./terraform --output cli 2>&1 | tee checkov.log; then
-          ISSUES_COUNT=$(grep -c "FAILED" checkov.log 2>/dev/null || echo "0")
-        else
-          ISSUES_COUNT=$(grep -c "FAILED" checkov.log 2>/dev/null || echo "Unknown")
-        fi
-        
-        echo "## 🚨 Critical Security Issues: $ISSUES_COUNT" | tee -a results.log terraform-analysis.txt
-        echo "" | tee -a results.log terraform-analysis.txt
-        echo "### Top Security Misconfigurations:" | tee -a results.log terraform-analysis.txt
-        grep -A1 "FAILED" checkov.log | head -20 | tee -a results.log terraform-analysis.txt
-        echo "" | tee -a results.log terraform-analysis.txt
-        
-        echo "## ⚠️ Infrastructure Security Analysis:" | tee -a results.log terraform-analysis.txt
-        echo "- **S3 Buckets**: Public access enabled (CRITICAL)" | tee -a results.log terraform-analysis.txt
-        echo "- **Security Groups**: 0.0.0.0/0 access (CRITICAL)" | tee -a results.log terraform-analysis.txt
-        echo "- **RDS Database**: Public access + unencrypted (CRITICAL)" | tee -a results.log terraform-analysis.txt
-        echo "- **IAM Policy**: Wildcard permissions (CRITICAL)" | tee -a results.log terraform-analysis.txt
-        echo "- **EC2 Instance**: Unencrypted EBS volumes (HIGH)" | tee -a results.log terraform-analysis.txt
-        echo "" | tee -a results.log terraform-analysis.txt
-        
-        echo "## 🛠️ Remediation Priority:" | tee -a results.log terraform-analysis.txt
-        echo "1. **IMMEDIATE**: Restrict S3 bucket public access" | tee -a results.log terraform-analysis.txt
-        echo "2. **IMMEDIATE**: Lock down security group rules to specific IPs" | tee -a results.log terraform-analysis.txt
-        echo "3. **IMMEDIATE**: Make RDS private and enable encryption" | tee -a results.log terraform-analysis.txt
-        echo "4. **HIGH**: Replace IAM wildcard permissions with least privilege" | tee -a results.log terraform-analysis.txt
-        echo "5. **MEDIUM**: Enable EBS encryption on EC2 instances" | tee -a results.log terraform-analysis.txt
-        
-        END_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-        echo "" | tee -a results.log
-        echo "Completed: $END_TIME (took ~45s)" | tee -a results.log
-        echo "Token Usage: Input tokens: 312, Output tokens: 578" | tee -a results.log
-        
-        # Set outputs for PR comments  
+        # Extract the structured result section
+        echo "$RESULT" | sed -n '/📋 Execution Results/,/Token Usage:/p' > terraform-results.txt
         echo "TERRAFORM_RESULT<<EOF" >> $GITHUB_OUTPUT
-        sed -n '/📋 Execution Results/,/Token Usage:/p' results.log | tail -20 >> $GITHUB_OUTPUT
+        cat terraform-results.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
         
+        # Extract just the agent's analysis
+        echo "$RESULT" | sed -n '/Result:/,/Token Usage:/p' | sed '1d;$d' > terraform-analysis.txt
         echo "TERRAFORM_ANALYSIS<<EOF" >> $GITHUB_OUTPUT
         cat terraform-analysis.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
