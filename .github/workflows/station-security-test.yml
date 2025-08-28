@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   security-scan:
@@ -17,21 +16,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      
     - name: Run Station Security Analysis
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || env.OPENAI_API_KEY }}
       run: |
         echo "🚀 Starting Station DevOps Security Analysis"
         
-        # Pull the Station container from GitHub Container Registry
-        docker pull ghcr.io/cloudshipai/station-devops-simple:latest
+        # Pull the Station container from Docker Hub (public)
+        docker pull epuerta18/station-devops-simple:latest
         
         echo "=== SECURITY SCANNER ===" 
         # Run Security Scanner with combined sync + agent execution
@@ -39,7 +31,7 @@ jobs:
           -v /var/run/docker.sock:/var/run/docker.sock \
           -v ${{ github.workspace }}:/workspace \
           -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
-          ghcr.io/cloudshipai/station-devops-simple:latest \
+          epuerta18/station-devops-simple:latest \
           bash -c "stn sync default -i=false && stn agent run 'Security Scanner' 'Scan this repository for security issues, secrets, and vulnerabilities. Focus on .env files, configuration files, and any exposed credentials. Use gitleaks to scan for secrets.' --env default" || echo "Security scan completed or timed out"
           
         echo "=== TERRAFORM AUDITOR ==="
@@ -48,5 +40,5 @@ jobs:
           -v /var/run/docker.sock:/var/run/docker.sock \
           -v ${{ github.workspace }}:/workspace \
           -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
-          ghcr.io/cloudshipai/station-devops-simple:latest \
+          epuerta18/station-devops-simple:latest \
           bash -c "stn sync default -i=false && stn agent run 'Terraform Auditor' 'Analyze all Terraform files in this repository for security misconfigurations and compliance issues. Use checkov for Infrastructure as Code security scanning.' --env default" || echo "Terraform audit completed or timed out"
