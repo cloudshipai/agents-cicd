@@ -27,6 +27,7 @@ jobs:
       - name: Run Security Scanner Agent
         id: security_scan
         run: |
+          # Run Station Security Scanner and capture output
           docker run --rm \
             -v "$(pwd):/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -36,7 +37,12 @@ jobs:
             echo '🔍 Starting Security Scanner Agent...' &&
             stn sync default -i=false &&
             stn agent run 'Security Scanner' 'Scan /workspace for security vulnerabilities, focusing on terraform/, docker/, python/, and scripts/ directories. Detect secrets, misconfigurations, and provide remediation steps.'
-          " > security_scan_output.txt 2>&1
+          " | tee security_scan_output.txt
+          
+          # Ensure output file exists and has content
+          if [[ ! -s security_scan_output.txt ]]; then
+            echo "❌ No output captured from Security Scanner" > security_scan_output.txt
+          fi
           
           # Extract key findings from the output
           echo "SECURITY_SCAN_RESULTS<<EOF" >> $GITHUB_OUTPUT
@@ -48,6 +54,7 @@ jobs:
       - name: Run Terraform Auditor Agent  
         id: terraform_audit
         run: |
+          # Run Station Terraform Auditor and capture output
           docker run --rm \
             -v "$(pwd):/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -57,7 +64,12 @@ jobs:
             echo '🏗️ Starting Terraform Auditor Agent...' &&
             stn sync default -i=false &&
             stn agent run 'Terraform Auditor' 'Analyze Terraform files in /workspace/terraform/ for security issues and best practices violations'
-          " > terraform_audit_output.txt 2>&1
+          " | tee terraform_audit_output.txt
+          
+          # Ensure output file exists and has content
+          if [[ ! -s terraform_audit_output.txt ]]; then
+            echo "❌ No output captured from Terraform Auditor" > terraform_audit_output.txt
+          fi
           
           # Extract key findings from the output
           echo "TERRAFORM_AUDIT_RESULTS<<EOF" >> $GITHUB_OUTPUT
