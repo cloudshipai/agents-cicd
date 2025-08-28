@@ -144,15 +144,17 @@ jobs:
 
       - name: Comment PR with Security Results
         if: github.event_name == 'pull_request'
+        env:
+          SECURITY_SUMMARY: ${{ steps.create_summary.outputs.SECURITY_SUMMARY }}
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `${{ steps.create_summary.outputs.SECURITY_SUMMARY }}`
-            })
+              body: process.env.SECURITY_SUMMARY
+            });
 
       - name: Upload Security Reports
         uses: actions/upload-artifact@v4
