@@ -70,43 +70,59 @@ jobs:
         id: create_summary
         if: always()
         run: |
-          # Create a comprehensive security report
-          cat > security_summary.md << 'EOF'
+          # Extract key findings from outputs (first 1000 chars of each)
+          SECURITY_SCAN_SUMMARY=$(echo "${{ steps.security_scan.outputs.SECURITY_SCAN_RESULTS }}" | head -c 1000)
+          TERRAFORM_AUDIT_SUMMARY=$(echo "${{ steps.terraform_audit.outputs.TERRAFORM_AUDIT_RESULTS }}" | head -c 1000)
+          
+          # Count critical findings
+          CRITICAL_COUNT=$(echo "${{ steps.security_scan.outputs.SECURITY_SCAN_RESULTS }}" | grep -i "critical\|failed\|error\|vulnerable" | wc -l || echo "0")
+          
+          # Create a concise security report
+          cat > security_summary.md << EOF
           # 🔒 Station DevOps Security Audit Results
           
           **Audit completed:** $(date '+%Y-%m-%d %H:%M:%S UTC')
           **Repository:** ${{ github.repository }}
           **Branch:** ${{ github.ref_name }}
           **Commit:** ${{ github.sha }}
+          **Critical Issues Found:** $CRITICAL_COUNT
           
-          ## 🔍 Security Scanner Results
+          ## 📊 Executive Summary
+          
+          ✅ **Security Scanner**: Comprehensive vulnerability analysis completed  
+          ✅ **Terraform Auditor**: Infrastructure security assessment completed  
+          📋 **Full Report**: Available in workflow artifacts
+          
+          ## 🔍 Key Security Findings
           
           <details>
-          <summary>Click to expand Security Scanner findings</summary>
+          <summary>Click to expand Security Scanner highlights (first 1000 chars)</summary>
           
-          ```
-          ${{ steps.security_scan.outputs.SECURITY_SCAN_RESULTS }}
-          ```
+          \`\`\`
+          $SECURITY_SCAN_SUMMARY...
+          \`\`\`
           
           </details>
           
-          ## 🏗️ Terraform Auditor Results
-          
           <details>
-          <summary>Click to expand Terraform Auditor findings</summary>
+          <summary>Click to expand Terraform Auditor highlights (first 1000 chars)</summary>
           
-          ```
-          ${{ steps.terraform_audit.outputs.TERRAFORM_AUDIT_RESULTS }}
-          ```
+          \`\`\`
+          $TERRAFORM_AUDIT_SUMMARY...
+          \`\`\`
           
           </details>
+          
+          ## 📁 Full Reports
+          
+          🔗 **Complete analysis available in [workflow artifacts](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})**
           
           ---
           
           🤖 **Powered by Station DevOps Security Platform**
-          - **Security Tools:** Checkov, TFLint, Bandit, Secret Detection
-          - **AI Analysis:** GPT-powered vulnerability assessment and remediation guidance
-          - **Container:** `epuerta18/station-default:latest`
+          - **Security Tools:** Checkov, TFLint, Bandit, Secret Detection  
+          - **AI Analysis:** GPT-5 powered vulnerability assessment
+          - **Container:** \`epuerta18/station-default:latest\`
           
           EOF
           
