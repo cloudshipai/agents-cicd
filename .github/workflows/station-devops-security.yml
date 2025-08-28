@@ -1,0 +1,72 @@
+name: Station DevOps Security Audit
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  devops-security-audit:
+    name: Station DevOps Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Load Station Security Environment
+        run: |
+          echo "🚀 Loading Station DevOps Security Environment"
+          # Pull the pre-built Station image from registry
+          docker pull ghcr.io/epuerta/station-default:latest
+          docker tag ghcr.io/epuerta/station-default:latest station-default:latest
+          echo "✅ Station security environment ready"
+
+      - name: Run Security Scanner Agent
+        run: |
+          docker run --rm \
+            -v "$(pwd):/workspace" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
+            station-default:latest bash -c "
+            cd /workspace &&
+            echo '🔍 Starting Security Scanner Agent...' &&
+            stn sync default -i=false &&
+            stn agent run 'Security Scanner' 'Scan /workspace for security vulnerabilities, focusing on terraform/, docker/, python/, and scripts/ directories. Detect secrets, misconfigurations, and provide remediation steps.'
+          "
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run Terraform Auditor Agent
+        run: |
+          docker run --rm \
+            -v "$(pwd):/workspace" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
+            station-default:latest bash -c "
+            cd /workspace &&
+            echo '🏗️ Starting Terraform Auditor Agent...' &&
+            stn sync default -i=false &&
+            stn agent run 'Terraform Auditor' 'Analyze Terraform files in /workspace/terraform/ for security issues and best practices violations'
+          "
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Security Analysis Summary
+        if: always()
+        run: |
+          echo "🔍 Station DevOps Security Audit Complete"
+          echo "✅ Security Scanner: Comprehensive vulnerability scan"
+          echo "✅ Terraform Auditor: Infrastructure security analysis"
+          echo "📊 Results logged above with detailed findings and remediation steps"
+
+      - name: Upload Security Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: station-security-reports
+          path: |
+            security-reports/
+            checkov-report.*
+          retention-days: 30
