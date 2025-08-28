@@ -19,9 +19,9 @@ jobs:
       - name: Load Station Security Environment
         run: |
           echo "🚀 Loading Station DevOps Security Environment"
-          # Pull the pre-built Station image from CloudShip AI registry
-          docker pull ghcr.io/cloudshipai/station-default:latest
-          docker tag ghcr.io/cloudshipai/station-default:latest station-default:latest
+          # Pull the pre-built Station image from Docker Hub (public)
+          docker pull epuerta18/station-default:latest
+          docker tag epuerta18/station-default:latest station-default:latest
           echo "✅ Station security environment ready"
 
       - name: Run Security Scanner Agent
