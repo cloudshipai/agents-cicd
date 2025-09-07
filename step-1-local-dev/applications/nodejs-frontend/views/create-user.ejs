@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create User - Station Lab</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { background: #2196F3; color: white; padding: 20px; border-radius: 5px; }
+        .form-container { max-width: 500px; margin: 20px 0; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        .btn { background: #2196F3; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn:hover { background: #1976D2; }
+        .btn-secondary { background: #666; }
+        .error { background: #ffebee; color: #c62828; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .back-link { text-decoration: none; color: #666; margin-right: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Station Lab - Create New User</h1>
+    </div>
+
+    <% if (typeof error !== 'undefined') { %>
+        <div class="error"><%= error %></div>
+    <% } %>
+
+    <div class="form-container">
+        <form method="POST" action="/users">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <div class="form-group">
+                <a href="/" class="back-link">← Back to Users</a>
+                <button type="submit" class="btn">Create User</button>
+            </div>
+        </form>
+    </div>
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;">
+        <p><strong>Station Lab Stage 1:</strong> Basic user creation form</p>
+        <p>🎯 <strong>Station Agent Guidance:</strong> This form needs validation, security improvements, and better UX!</p>
+    </div>
+</body>
+</html>

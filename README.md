@@ -23,6 +23,19 @@ Station agents run automatically on:
 - Main branch for compliance reporting
 - Scheduled scans for continuous monitoring
 
+# With Station 
+
+```bash 
+{
+  "mcpServers": {
+    "station": {
+      "command": "stn",
+      "args": ["stdio"]
+    }
+  }
+}
+```
+
 ## Installation
 
 ```bash

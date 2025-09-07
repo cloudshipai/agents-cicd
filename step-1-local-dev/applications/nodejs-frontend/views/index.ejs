@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Station Lab - User Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { background: #2196F3; color: white; padding: 20px; border-radius: 5px; }
+        .status { padding: 10px; margin: 20px 0; border-radius: 5px; }
+        .connected { background: #4CAF50; color: white; }
+        .disconnected { background: #f44336; color: white; }
+        .users { margin-top: 20px; }
+        .user-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .btn { background: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #e8f5e8; color: #2e7d32; padding: 10px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Station Lab - User Management System</h1>
+        <p>Flask API + Node.js Frontend with Docker & Kubernetes</p>
+    </div>
+
+    <div class="status <%= apiStatus === 'connected' ? 'connected' : 'disconnected' %>">
+        API Status: <%= apiStatus === 'connected' ? '✅ Connected' : '❌ Disconnected' %>
+        <% if (typeof error !== 'undefined') { %>
+            - <%= error %>
+        <% } %>
+    </div>
+
+    <% if (typeof req !== 'undefined' && req.query.success) { %>
+        <div class="success"><%= req.query.success %></div>
+    <% } %>
+
+    <div>
+        <h2>Users</h2>
+        <a href="/create" class="btn">Create New User</a>
+        
+        <div class="users">
+            <% if (users.length === 0) { %>
+                <p>No users found. <% if (apiStatus === 'connected') { %>Create your first user!</ p>
+            <% } else { %>
+                API is disconnected.</p>
+            <% } %>
+            <% } else { %>
+                <% users.forEach(user => { %>
+                    <div class="user-card">
+                        <h3><%= user.username %></h3>
+                        <p><strong>Email:</strong> <%= user.email %></p>
+                        <p><strong>ID:</strong> <%= user.id %></p>
+                        <p><strong>Created:</strong> <%= user.created_at %></p>
+                    </div>
+                <% }); %>
+            <% } %>
+        </div>
+    </div>
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;">
+        <p><strong>Station Lab Stage 1:</strong> Local Development with Docker</p>
+        <p>🎯 <strong>Next Steps:</strong> Station agents will help optimize this setup for production!</p>
+    </div>
+</body>
+</html>

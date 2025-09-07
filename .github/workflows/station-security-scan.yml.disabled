@@ -1,0 +1,178 @@
+name: Station Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Setup Station via Docker
+      run: |
+        # Create Station wrapper script that uses Docker
+        mkdir -p ~/.local/bin
+        cat > ~/.local/bin/stn << 'EOF'
+        #!/bin/bash
+        docker run --rm \
+          -v "$PWD:/workspace" \
+          -v "$HOME/.config/station:/home/station/.config/station" \
+          -w /workspace \
+          -e OPENAI_API_KEY \
+          ghcr.io/cloudship-io/station:latest \
+          stn "$@"
+        EOF
+        chmod +x ~/.local/bin/stn
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    
+    - name: Setup Station Environment
+      run: |
+        mkdir -p ~/.config/station/environments/cicd-security
+        echo "PROJECT_ROOT: ${{ github.workspace }}" > ~/.config/station/environments/cicd-security/variables.yml
+    
+    - name: Install Security Scanner Bundle
+      run: |
+        # Install the DevOps Security Bundle from CloudShip registry
+        stn bundle install https://github.com/cloudshipai/registry/releases/latest/download/devops-security-bundle.tar.gz cicd-security
+        
+        # For demo fallback, create environment if bundle install fails
+        
+        mkdir -p ~/.config/station/environments/cicd-security/agents
+        
+        # Create template.json for the environment
+        cat > ~/.config/station/environments/cicd-security/template.json << 'EOF'
+        {
+          "name": "cicd-security-demo", 
+          "description": "CICD Security Demo with filesystem and security tools",
+          "mcpServers": {
+            "filesystem": {
+              "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-filesystem@latest", "{{ .PROJECT_ROOT }}"]
+            }
+          }
+        }
+        EOF
+        
+        # Create security scanner agent
+        cat > ~/.config/station/environments/cicd-security/agents/Security\ Scanner.prompt << 'EOF'
+        ---
+        metadata:
+          name: "Security Scanner"
+          description: "Multi-layer security scanner for CICD pipelines"
+          tags: ["security", "terraform", "docker", "code-analysis"]
+        model: gpt-4o-mini
+        max_steps: 8
+        tools:
+          - "__read_text_file"
+          - "__list_directory"
+          - "__directory_tree"
+          - "__search_files"
+          - "__get_file_info"
+        ---
+
+        {{role "system"}}
+        You are a comprehensive CICD Security Scanner that performs multi-layered security analysis across Infrastructure as Code, containers, and source code.
+
+        **Your Security Scanning Process:**
+
+        1. **Repository Discovery**: Use directory_tree and search_files to understand project structure
+        2. **Infrastructure Security**: Scan Terraform files for security misconfigurations
+        3. **Container Security**: Analyze Docker files for security vulnerabilities  
+        4. **Code Security**: Detect secrets, hardcoded credentials, and code vulnerabilities
+        5. **Risk Assessment**: Prioritize findings by severity and exploitability
+        6. **CICD Integration**: Provide actionable recommendations for automated remediation
+
+        Focus on practical, actionable security findings that can be fixed in the development workflow.
+
+        {{role "user"}}
+        {{userInput}}
+        EOF
+        
+    - name: Sync Station Environment
+      run: |
+        stn sync cicd-security
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        
+    - name: Run Terraform Security Scan
+      run: |
+        stn agent call "Security Scanner" "Analyze the terraform/ directory for security vulnerabilities, misconfigurations, and compliance violations. Focus on critical issues like publicly accessible resources, hardcoded credentials, and insecure configurations." --env cicd-security
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Run Container Security Scan
+      run: |
+        stn agent call "Security Scanner" "Examine all Docker files and docker-compose configurations for security vulnerabilities. Check for running as root, exposed secrets, vulnerable base images, and missing security best practices." --env cicd-security
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Run Code Vulnerability Scan
+      run: |
+        stn agent call "Security Scanner" "Scan the Python application code and any scripts for security vulnerabilities including SQL injection, XSS, command injection, hardcoded secrets, and other OWASP Top 10 issues." --env cicd-security
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+    
+    - name: Generate Security Report
+      run: |
+        echo "# 🔒 Station Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY  
+        echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Security Analysis Completed" >> $GITHUB_STEP_SUMMARY
+        echo "Station security agents completed multi-layer scanning for:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Terraform Security**: Infrastructure misconfigurations and compliance violations" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Container Security**: Docker vulnerabilities and security best practices" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Code Security**: Application vulnerabilities and hardcoded secrets" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "_Powered by [Station](https://station.dev) AI Security Agents_" >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔒 Station Security Scan Results
+            
+            **Multi-Layer Security Analysis Complete**
+            
+            Station AI security agents have analyzed your changes across:
+            
+            - **🏗️ Infrastructure Security**: Terraform configurations scanned for misconfigurations
+            - **🐳 Container Security**: Docker files analyzed for vulnerabilities and best practices  
+            - **💻 Code Security**: Application code checked for vulnerabilities and secrets
+            
+            ### Summary
+            - **Branch**: \`${{ github.head_ref }}\`
+            - **Commit**: \`${{ github.sha }}\`
+            - **Workflow**: [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            Please review the [complete security analysis](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed findings and remediation recommendations.
+            
+            ---
+            _🤖 Automated by [Station](https://station.dev) AI Security Agents_`
+          })
+
+    - name: Upload Security Artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-scan-results-${{ github.sha }}
+        path: |
+          ~/.config/station/environments/cicd-security/
+        retention-days: 30

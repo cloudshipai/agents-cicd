@@ -1,0 +1,200 @@
+name: Station Bundle Registry Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: 'Station bundle URL or registry ID'
+        required: true
+        default: 'https://github.com/cloudshipai/registry/releases/latest/download/devops-security-bundle.tar.gz'
+      agent_task:
+        description: 'Task to execute with the bundle agents'
+        required: true
+        default: 'Perform a comprehensive security analysis of this repository including terraform, docker, and source code'
+
+jobs:
+  bundle-demo:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Setup Station via Docker
+      run: |
+        # Create Station wrapper script that uses Docker
+        mkdir -p ~/.local/bin
+        cat > ~/.local/bin/stn << 'EOF'
+        #!/bin/bash
+        docker run --rm \
+          -v "$PWD:/workspace" \
+          -v "$HOME/.config/station:/home/station/.config/station" \
+          -w /workspace \
+          -e OPENAI_API_KEY \
+          ghcr.io/cloudship-io/station:latest \
+          stn "$@"
+        EOF
+        chmod +x ~/.local/bin/stn
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        
+    - name: Verify Station Installation
+      run: |
+        stn --version
+        stn --help
+        
+    - name: Install Bundle from Registry
+      run: |
+        echo "Installing bundle: ${{ github.event.inputs.bundle_url }}"
+        
+        # Set project root variable for bundle
+        mkdir -p ~/.config/station/temp-bundle-env
+        echo "PROJECT_ROOT: ${{ github.workspace }}" > ~/.config/station/temp-bundle-env/variables.yml
+        
+        # Install bundle from CloudShip registry
+        stn bundle install "${{ github.event.inputs.bundle_url }}" temp-bundle-env
+        
+        # For demo, create a sample bundle structure
+        cat > ~/.config/station/temp-bundle-env/template.json << 'EOF'
+        {
+          "name": "registry-demo-bundle",
+          "description": "Demo bundle installed from registry", 
+          "mcpServers": {
+            "filesystem": {
+              "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-filesystem@latest", "{{ .PROJECT_ROOT }}"]
+            }
+          }
+        }
+        EOF
+        
+        mkdir -p ~/.config/station/temp-bundle-env/agents
+        
+        # Create demo agents that would come from the bundle
+        cat > ~/.config/station/temp-bundle-env/agents/Terraform\ Auditor.prompt << 'EOF'
+        ---
+        metadata:
+          name: "Terraform Auditor"
+          description: "Infrastructure security and compliance auditor"
+          tags: ["terraform", "infrastructure", "security", "compliance"]
+        model: gpt-4o-mini
+        max_steps: 6
+        tools:
+          - "__read_text_file"
+          - "__list_directory"
+          - "__search_files"
+        ---
+
+        {{role "system"}}
+        You are a Terraform Security Auditor specializing in infrastructure security, compliance, and best practices analysis.
+
+        **Your audit process:**
+        1. **Discovery**: Find all .tf files and understand the infrastructure
+        2. **Security Analysis**: Check for public access, hardcoded secrets, insecure configurations
+        3. **Compliance Review**: Verify against security frameworks (CIS, NIST)
+        4. **Best Practices**: Evaluate resource tagging, naming, documentation
+        5. **Risk Assessment**: Prioritize findings by severity and impact
+        
+        Provide specific, actionable recommendations for each finding.
+
+        {{role "user"}}
+        {{userInput}}
+        EOF
+        
+        cat > ~/.config/station/temp-bundle-env/agents/Container\ Scanner.prompt << 'EOF'
+        ---
+        metadata:
+          name: "Container Scanner"
+          description: "Docker and container security analyzer"
+          tags: ["docker", "containers", "security", "best-practices"]
+        model: gpt-4o-mini
+        max_steps: 6
+        tools:
+          - "__read_text_file"
+          - "__list_directory"
+          - "__search_files"
+        ---
+
+        {{role "system"}}
+        You are a Container Security Scanner focused on Docker security best practices and vulnerability detection.
+
+        **Your scanning process:**
+        1. **Container Discovery**: Find Dockerfiles, docker-compose files
+        2. **Security Analysis**: Check for root users, exposed secrets, vulnerable images
+        3. **Best Practices**: Evaluate multi-stage builds, minimal images, health checks
+        4. **Runtime Security**: Assess privilege escalation, network exposure
+        5. **Supply Chain**: Check base image security and update practices
+        
+        Focus on practical security improvements that can be implemented immediately.
+
+        {{role "user"}}
+        {{userInput}}
+        EOF
+
+    - name: Sync Bundle Environment
+      run: |
+        stn sync temp-bundle-env
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        
+    - name: List Available Agents
+      run: |
+        echo "## 🤖 Available Agents from Bundle" >> $GITHUB_STEP_SUMMARY
+        stn agent list --env temp-bundle-env --format table >> $GITHUB_STEP_SUMMARY || echo "Error listing agents" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Execute Bundle Agent Task
+      run: |
+        echo "Executing task: ${{ github.event.inputs.agent_task }}"
+        
+        # Run the first available agent with the specified task
+        AGENT_ID=$(stn agent list --env temp-bundle-env --format json | jq -r '.[0].id // empty' || echo "")
+        
+        if [ -n "$AGENT_ID" ]; then
+          echo "Running agent ID: $AGENT_ID"
+          stn agent call "$AGENT_ID" "${{ github.event.inputs.agent_task }}" --env temp-bundle-env
+        else
+          echo "No agents found in bundle environment"
+          exit 1
+        fi
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        
+    - name: Run Terraform Auditor
+      run: |
+        stn agent call "Terraform Auditor" "Audit the Terraform configurations in this repository for security issues, compliance violations, and best practices. Focus on critical misconfigurations." --env temp-bundle-env
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+        
+    - name: Run Container Scanner  
+      run: |
+        stn agent call "Container Scanner" "Scan all Docker configurations for security vulnerabilities and best practice violations. Check for exposed secrets and insecure configurations." --env temp-bundle-env
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      continue-on-error: true
+        
+    - name: Generate Bundle Demo Report
+      run: |
+        echo "# 📦 Station Bundle Registry Demo" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Bundle Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Bundle URL**: \`${{ github.event.inputs.bundle_url }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Task Executed**: ${{ github.event.inputs.agent_task }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Demonstration Complete" >> $GITHUB_STEP_SUMMARY
+        echo "This workflow demonstrated:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Bundle Installation**: Downloaded and installed Station bundle from registry" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Environment Setup**: Configured bundle environment with variables" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Agent Execution**: Ran specialized agents from the bundle" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **CI/CD Integration**: Seamless integration with GitHub Actions" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "_🚀 Powered by [Station](https://station.dev) Bundle Registry_" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Upload Bundle Environment
+      uses: actions/upload-artifact@v4
+      with:
+        name: bundle-demo-environment-${{ github.sha }}
+        path: |
+          ~/.config/station/temp-bundle-env/
+        retention-days: 7

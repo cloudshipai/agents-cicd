@@ -1,0 +1,51 @@
+# Stage 1: Basic Docker Compose setup
+# Station agents will suggest improvements for production readiness
+
+version: '3.8'
+
+services:
+  flask-api:
+    build: 
+      context: ../../applications/flask-api
+      dockerfile: Dockerfile
+    container_name: flask-api
+    ports:
+      - "5000:5000"
+    environment:
+      # Station agent should suggest using .env files
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    volumes:
+      # Station agent should suggest this is not production-ready
+      - ../../applications/flask-api:/app
+    # Station agent should suggest health checks
+    # Station agent should suggest restart policies
+    # Station agent should suggest resource limits
+
+  nodejs-frontend:
+    build:
+      context: ../../applications/nodejs-frontend
+      dockerfile: Dockerfile
+    container_name: nodejs-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - API_URL=http://flask-api:5000
+    volumes:
+      # Station agent should suggest this is not production-ready
+      - ../../applications/nodejs-frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      # Station agent should suggest proper dependency management
+      - flask-api
+    # Station agent should suggest health checks
+    # Station agent should suggest restart policies
+
+# Station agent should suggest:
+# - Networks configuration
+# - Volumes for data persistence  
+# - Secrets management
+# - Resource limits
+# - Health checks
+# - Logging configuration
