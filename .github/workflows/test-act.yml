@@ -1,0 +1,32 @@
+name: Test Act Runner
+
+on:
+  push:
+    branches: [ main, test-* ]
+  workflow_dispatch:
+
+jobs:
+  test-basic:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Basic test
+      run: |
+        echo "🚀 Testing act runner locally"
+        echo "Repository: ${{ github.repository }}"
+        echo "Branch: ${{ github.ref_name }}"
+        pwd
+        ls -la
+        
+    - name: Check Node.js
+      run: |
+        node --version
+        npm --version
+        
+    - name: Check Python
+      run: |
+        python3 --version
+        pip3 --version
