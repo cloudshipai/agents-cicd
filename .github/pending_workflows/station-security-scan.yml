@@ -1,0 +1,155 @@
+name: Station Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '**/*.tf'
+      - '**/Dockerfile*'
+      - '**/*.dockerfile'
+      - '**/*.docker-compose.yml'
+      - '**/*.py'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '**/*.tf'
+      - '**/Dockerfile*'
+      - '**/*.dockerfile'
+      - '**/*.docker-compose.yml'
+      - '**/*.py'
+  schedule:
+    - cron: '0 2 * * 1' # weekly Monday 2 AM UTC
+
+concurrency:
+  group: station-security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STN_MODEL: gpt-4o-mini
+  STN_MAX_STEPS: "4"
+  STN_TOKEN_BUDGET: "1500"
+  STN_SUMMARY_MAX_CHARS: "2500"
+  BUNDLE_VERSION: v0.1.0
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect relevant changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            iac:
+              - '**/*.tf'
+            container:
+              - '**/Dockerfile*'
+              - '**/*.dockerfile'
+              - '**/*.docker-compose.yml'
+            code:
+              - '**/*.py'
+
+      - name: Short-circuit when no relevant changes
+        if: ${{ steps.changes.outputs.iac != 'true' && steps.changes.outputs.container != 'true' && steps.changes.outputs.code != 'true' && github.event_name != 'schedule' }}
+        run: |
+          echo "No relevant IaC/Container/Python changes detected. Skipping heavy scan."
+          echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cache Station bundle and tools
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/station
+            ~/.config/station/bundles
+            ~/.cache/trivy
+            ~/.cache/pip
+            ~/.npm
+          key: ${{ runner.os }}-station-bundle-v1-${{ env.BUNDLE_VERSION }}
+
+      - name: Prepare bundle dir
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        run: |
+          mkdir -p ~/.config/station/bundles
+          mkdir -p artifacts logs
+
+      - name: Download DevOps Security Bundle (pinned)
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        run: |
+          set -euo pipefail
+          BUNDLE_URL="https://github.com/cloudshipai/registry/releases/download/${{ env.BUNDLE_VERSION }}/devops-security-bundle.tar.gz"
+          CHECKSUM_URL="${BUNDLE_URL}.sha256"
+          echo "Downloading bundle: ${BUNDLE_URL}"
+          curl -sSLf "${BUNDLE_URL}" -o /tmp/devops-security-bundle.tar.gz
+          curl -sSLf "${CHECKSUM_URL}" -o /tmp/devops-security-bundle.tar.gz.sha256
+          echo "Verifying checksum..."
+          (cd /tmp && shasum -a 256 -c devops-security-bundle.tar.gz.sha256)
+          tar -xzf /tmp/devops-security-bundle.tar.gz -C ~/.config/station/bundles || true
+
+      - name: Run Station Integration Tests (bounded tokens/steps)
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        env:
+          STN_MODEL: ${{ env.STN_MODEL }}
+          STN_MAX_STEPS: ${{ env.STN_MAX_STEPS }}
+          STN_TOKEN_BUDGET: ${{ env.STN_TOKEN_BUDGET }}
+          STN_SUMMARY_MAX_CHARS: ${{ env.STN_SUMMARY_MAX_CHARS }}
+          STN_FAIL_ON_SEVERITY: high
+        run: |
+          chmod +x scripts/test-station-integration.sh
+          ./scripts/test-station-integration.sh 2>&1 | tee logs/station-run.log
+
+      - name: Package security results
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          tar -czf artifacts/security-results.tar.gz --owner=0 --group=0 --numeric-owner \
+            -C logs . || true
+          echo "Security scan results packaged."
+
+      - name: Upload artifact (compressed, 7 days)
+        if: ${{ steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true' || github.event_name == 'schedule' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results
+          path: artifacts/security-results.tar.gz
+          retention-days: 7
+          compression-level: 9
+
+      - name: PR summary comment (short)
+        if: ${{ github.event_name == 'pull_request' && (steps.changes.outputs.iac == 'true' || steps.changes.outputs.container == 'true' || steps.changes.outputs.code == 'true') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${{ toJson(github.server_url) }}/${{ toJson(github.repository) }}/actions/runs/${{ toJson(github.run_id) }}`;
+            const fs = require('fs');
+            let summary = 'Security scan completed. No summary available.';
+            try {
+              summary = fs.readFileSync('artifacts/summary.txt', 'utf8');
+            } catch (e) {}
+            const body = `
+            Short security scan summary:
+            ${summary}
+
+            - Artifacts: security-results.tar.gz
+            - Full logs and artifacts: ${runUrl}
+            `;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
+
+      - name: Job summary
+        run: |
+          echo "Station Security Scan finished." >> $GITHUB_STEP_SUMMARY
+          echo "- Model: ${{ env.STN_MODEL }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Max steps: ${{ env.STN_MAX_STEPS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Token budget: ${{ env.STN_TOKEN_BUDGET }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifacts: security-results.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY

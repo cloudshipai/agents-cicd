@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: agents-cicd-app:dev
+    environment:
+      - NODE_ENV=development
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "512M"
+    volumes:
+      - ..:/workspace:cached
+    command: ["bash", "-lc", "sleep infinity"]

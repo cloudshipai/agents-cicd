@@ -1,0 +1,59 @@
+name: Station Bundle Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_version:
+        description: "DevOps Security Bundle version (e.g., v0.1.0)"
+        required: true
+        default: "v0.1.0"
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BUNDLE_VERSION: ${{ github.event.inputs.bundle_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Station bundle/tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/station
+            ~/.config/station/bundles
+            ~/.cache/trivy
+            ~/.cache/pip
+            ~/.npm
+          key: ${{ runner.os }}-station-bundle-v1-${{ env.BUNDLE_VERSION }}
+
+      - name: Prepare directories
+        run: |
+          mkdir -p ~/.config/station/bundles logs artifacts
+
+      - name: Download DevOps Security Bundle (pinned)
+        run: |
+          set -euo pipefail
+          BUNDLE_URL="https://github.com/cloudshipai/registry/releases/download/${{ env.BUNDLE_VERSION }}/devops-security-bundle.tar.gz"
+          CHECKSUM_URL="${BUNDLE_URL}.sha256"
+          echo "Downloading bundle: ${BUNDLE_URL}"
+          curl -sSLf "${BUNDLE_URL}" -o /tmp/devops-security-bundle.tar.gz
+          curl -sSLf "${CHECKSUM_URL}" -o /tmp/devops-security-bundle.tar.gz.sha256
+          echo "Verifying checksum..."
+          (cd /tmp && shasum -a 256 -c devops-security-bundle.tar.gz.sha256)
+          tar -xzf /tmp/devops-security-bundle.tar.gz -C ~/.config/station/bundles || true
+          echo "Bundle extracted to ~/.config/station/bundles" | tee logs/demo.log
+
+      - name: Package demo logs
+        run: |
+          tar -czf artifacts/bundle-demo-results.tar.gz --owner=0 --group=0 --numeric-owner -C logs .
+
+      - name: Upload artifact (7 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-demo-results
+          path: artifacts/bundle-demo-results.tar.gz
+          retention-days: 7
+          compression-level: 9
