@@ -1,0 +1,36 @@
+{
+  "instances": [
+    {
+      "InstanceId": "i-aaaa1111",
+      "InstanceType": "t3.xlarge",
+      "State": "running",
+      "Tags": {"Name": "api-dev-1", "Env": "dev"},
+      "AverageCPUUtilization": 4.2,
+      "AverageNetworkBps": 200000.0
+    },
+    {
+      "InstanceId": "i-bbbb2222",
+      "InstanceType": "m5.large",
+      "State": "running",
+      "Tags": {"Name": "payments-prod-1", "Env": "prod"},
+      "AverageCPUUtilization": 7.0,
+      "AverageNetworkBps": 500000.0
+    },
+    {
+      "InstanceId": "i-cccc3333",
+      "InstanceType": "t3.micro",
+      "State": "running",
+      "Tags": {"Name": "cron-staging-1", "Env": "staging"},
+      "AverageCPUUtilization": 25.0,
+      "AverageNetworkBps": 1500000.0
+    },
+    {
+      "InstanceId": "i-dddd4444",
+      "InstanceType": "c5.2xlarge",
+      "State": "stopped",
+      "Tags": {"Name": "old-batch", "Env": "dev"},
+      "AverageCPUUtilization": 0.0,
+      "AverageNetworkBps": 0.0
+    }
+  ]
+}

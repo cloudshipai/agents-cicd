@@ -45,3 +45,12 @@ stn template install https://your-registry/bundles/security-scanner-bundle.tar.g
 # Run security scan
 stn agent call <agent-id> "Scan this repository for security issues"
 ```
+## FinOps Optimization: finops_analytics_ec2
+
+Analyze EC2 utilization and generate cost-optimization recommendations (rightsizing, scheduling).
+- Offline usage (sample data):
+  python3 python/finops_analytics_ec2.py --input-json examples/finops_ec2_sample.json --current-cost 2332.74
+- Live AWS usage (requires credentials and boto3):
+  python3 python/finops_analytics_ec2.py --aws-live --region us-east-1 --current-cost 2332.74
+
+Outputs JSON with metadata, total_estimated_savings, and per-instance recommendations.
