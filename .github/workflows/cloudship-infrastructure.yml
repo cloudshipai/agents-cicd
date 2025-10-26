@@ -1,0 +1,40 @@
+name: CloudShip Security - Infrastructure
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  infrastructure-security:
+    runs-on: ubuntu-latest
+    name: Infrastructure Security Scan
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Run Security Scan
+      run: |
+        docker run --rm \
+          --privileged \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+          -e CLOUDSHIP_REGISTRATION_KEY="${{ secrets.CLOUDSHIP_REGISTRATION_KEY }}" \
+          -e PROJECT_ROOT=/workspace \
+          -v ${{ github.workspace }}:/workspace \
+          ghcr.io/cloudshipai/station-security:latest \
+          bash -c "stn sync default -i=false && stn agent run 'Infrastructure Security Auditor' 'Scan /workspace for infrastructure security issues, compliance violations, and misconfigurations. Focus on critical and high severity findings.' --tail"
+
+    - name: Security Summary
+      if: always()
+      run: |
+        echo "## 🔒 CloudShip AI Security Scan Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Scanned:** Infrastructure as Code (Terraform, Kubernetes, Docker)" >> $GITHUB_STEP_SUMMARY
+        echo "**View detailed findings:** [CloudShip Dashboard](https://cloudshipai.com/dashboard)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "_Powered by [CloudShip AI](https://cloudshipai.com)_" >> $GITHUB_STEP_SUMMARY
