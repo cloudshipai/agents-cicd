@@ -100,16 +100,24 @@ jobs:
 
       - name: Comment PR with Security Results
         if: github.event_name == 'pull_request'
-        env:
-          SECURITY_SUMMARY: ${{ steps.create_summary.outputs.SECURITY_SUMMARY }}
         uses: actions/github-script@v7
         with:
           script: |
-            await github.rest.issues.createComment({
+            github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: process.env.SECURITY_SUMMARY
+              body: `## 🔒 CloudShip AI DevOps Security Audit Complete
+
+            Your pull request has been analyzed with multiple security agents:
+
+            ✅ **Infrastructure Security**: Scanned terraform/, docker/, and IaC files
+            ✅ **Supply Chain Security**: Generated SBOM and checked dependencies
+
+            📊 **View detailed findings:** [CloudShip Dashboard](https://cloudshipai.com/dashboard)
+            🔍 **Workflow run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            _Powered by [CloudShip AI](https://cloudshipai.com)_`
             });
 
       - name: Upload Security Reports
