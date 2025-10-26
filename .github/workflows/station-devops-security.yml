@@ -23,25 +23,23 @@ jobs:
 
       - name: Load Station Security Environment
         run: |
-          echo "🚀 Loading Station DevOps Security Environment"
-          # Pull the pre-built Station image from Docker Hub (public)
-          docker pull epuerta18/station-default:latest
-          docker tag epuerta18/station-default:latest station-default:latest
-          echo "✅ Station security environment ready"
+          echo "🚀 Loading CloudShip Security Environment"
+          echo "✅ Using public CloudShip security image"
 
       - name: Run Security Scanner Agent
         id: security_scan
         run: |
-          # Run Station Security Scanner and capture output
+          # Run CloudShip Security Scanner and capture output
           docker run --rm \
+            --privileged \
             -v "$(pwd):/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
-            station-default:latest bash -c "
-            cd /workspace &&
+            -e PROJECT_ROOT=/workspace \
+            ghcr.io/cloudshipai/station-security:latest bash -c "
             echo '🔍 Starting Security Scanner Agent...' &&
             stn sync default -i=false &&
-            stn agent run 'Security Scanner' 'Scan /workspace for security vulnerabilities, focusing on terraform/, docker/, python/, and scripts/ directories. Detect secrets, misconfigurations, and provide remediation steps.'
+            stn agent run 'Infrastructure Security Auditor' 'Scan /workspace for security vulnerabilities, focusing on terraform/, docker/, python/, and scripts/ directories. Detect secrets, misconfigurations, and provide remediation steps.' --tail
           " | tee security_scan_output.txt
           
           # Ensure output file exists and has content
@@ -56,96 +54,49 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Run Terraform Auditor Agent  
-        id: terraform_audit
+      - name: Run Supply Chain Scanner
+        id: supply_chain
         run: |
-          # Run Station Terraform Auditor and capture output
+          # Run CloudShip Supply Chain Guardian
           docker run --rm \
+            --privileged \
             -v "$(pwd):/workspace" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
-            station-default:latest bash -c "
-            cd /workspace &&
-            echo '🏗️ Starting Terraform Auditor Agent...' &&
+            -e PROJECT_ROOT=/workspace \
+            ghcr.io/cloudshipai/station-security:latest bash -c "
+            echo '🔗 Starting Supply Chain Guardian...' &&
             stn sync default -i=false &&
-            stn agent run 'Terraform Auditor' 'Analyze Terraform files in /workspace/terraform/ for security issues and best practices violations'
-          " | tee terraform_audit_output.txt
+            stn agent run 'Supply Chain Guardian' 'Generate SBOM and scan dependencies in /workspace for vulnerabilities' --tail
+          " | tee supply_chain_output.txt
           
           # Ensure output file exists and has content
-          if [[ ! -s terraform_audit_output.txt ]]; then
-            echo "❌ No output captured from Terraform Auditor" > terraform_audit_output.txt
+          if [[ ! -s supply_chain_output.txt ]]; then
+            echo "❌ No output captured from Supply Chain Guardian" > supply_chain_output.txt
           fi
-          
+
           # Extract key findings from the output
-          echo "TERRAFORM_AUDIT_RESULTS<<EOF" >> $GITHUB_OUTPUT
-          cat terraform_audit_output.txt >> $GITHUB_OUTPUT 
+          echo "SUPPLY_CHAIN_RESULTS<<EOF" >> $GITHUB_OUTPUT
+          cat supply_chain_output.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Create Security Report Summary
-        id: create_summary
         if: always()
         run: |
-          # Extract key findings from outputs (first 1000 chars of each)
-          SECURITY_SCAN_SUMMARY=$(echo "${{ steps.security_scan.outputs.SECURITY_SCAN_RESULTS }}" | head -c 1000)
-          TERRAFORM_AUDIT_SUMMARY=$(echo "${{ steps.terraform_audit.outputs.TERRAFORM_AUDIT_RESULTS }}" | head -c 1000)
-          
-          # Count critical findings
-          CRITICAL_COUNT=$(echo "${{ steps.security_scan.outputs.SECURITY_SCAN_RESULTS }}" | grep -i "critical\|failed\|error\|vulnerable" | wc -l || echo "0")
-          
-          # Create a concise security report
-          cat > security_summary.md << EOF
-          # 🔒 Station DevOps Security Audit Results
-          
-          **Audit completed:** $(date '+%Y-%m-%d %H:%M:%S UTC')
-          **Repository:** ${{ github.repository }}
-          **Branch:** ${{ github.ref_name }}
-          **Commit:** ${{ github.sha }}
-          **Critical Issues Found:** $CRITICAL_COUNT
-          
-          ## 📊 Executive Summary
-          
-          ✅ **Security Scanner**: Comprehensive vulnerability analysis completed  
-          ✅ **Terraform Auditor**: Infrastructure security assessment completed  
-          📋 **Full Report**: Available in workflow artifacts
-          
-          ## 🔍 Key Security Findings
-          
-          <details>
-          <summary>Click to expand Security Scanner highlights (first 1000 chars)</summary>
-          
-          \`\`\`
-          $SECURITY_SCAN_SUMMARY...
-          \`\`\`
-          
-          </details>
-          
-          <details>
-          <summary>Click to expand Terraform Auditor highlights (first 1000 chars)</summary>
-          
-          \`\`\`
-          $TERRAFORM_AUDIT_SUMMARY...
-          \`\`\`
-          
-          </details>
-          
-          ## 📁 Full Reports
-          
-          🔗 **Complete analysis available in [workflow artifacts](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})**
-          
-          ---
-          
-          🤖 **Powered by Station DevOps Security Platform**
-          - **Security Tools:** Checkov, TFLint, Bandit, Secret Detection  
-          - **AI Analysis:** GPT-5 powered vulnerability assessment
-          - **Container:** \`epuerta18/station-default:latest\`
-          
-          EOF
-          
-          echo "SECURITY_SUMMARY<<EOF" >> $GITHUB_OUTPUT
-          cat security_summary.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "## 🔒 CloudShip AI Security Audit Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Infrastructure Security**: Scanned for vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Supply Chain**: Generated SBOM and checked dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**View detailed findings:** [CloudShip Dashboard](https://cloudshipai.com/dashboard)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Powered by [CloudShip AI](https://cloudshipai.com)_" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment PR with Security Results
         if: github.event_name == 'pull_request'
