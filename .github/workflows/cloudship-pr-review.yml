@@ -22,7 +22,7 @@ jobs:
           -e CLOUDSHIP_REGISTRATION_KEY="${{ secrets.CLOUDSHIP_REGISTRATION_KEY }}" \
           -e PROJECT_ROOT=/workspace \
           -v ${{ github.workspace }}:/workspace \
-          ghcr.io/cloudshipai/station-security:latest \
+          ghcr.io/epuerta9/station-security:latest \
           bash -c "stn sync default -i=false && stn agent run 'PR Security Reviewer' 'Review PR #${{ github.event.pull_request.number }} for security vulnerabilities, code issues, and compliance violations. Provide actionable remediation guidance.' --tail"
 
     - name: Comment on PR
