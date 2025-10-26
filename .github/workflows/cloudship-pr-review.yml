@@ -21,7 +21,7 @@ jobs:
           -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
           -e PROJECT_ROOT=/workspace \
           -v ${{ github.workspace }}:/workspace \
-          ghcr.io/epuerta9/station-security:latest \
+          ghcr.io/cloudshipai/station-security:latest \
           bash -c "stn sync default -i=false && stn agent run 'PR Security Reviewer' 'Review PR #${{ github.event.pull_request.number }} for security vulnerabilities, code issues, and compliance violations. Provide actionable remediation guidance.' --tail"
 
     - name: Comment on PR
