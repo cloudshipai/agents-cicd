@@ -8,6 +8,9 @@ jobs:
   pr-security-review:
     runs-on: ubuntu-latest
     name: PR Security Review
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
     - name: Checkout Code
