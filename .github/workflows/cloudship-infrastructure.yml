@@ -23,10 +23,9 @@ jobs:
           --privileged \
           -v /var/run/docker.sock:/var/run/docker.sock \
           -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-          -e CLOUDSHIP_REGISTRATION_KEY="${{ secrets.CLOUDSHIP_REGISTRATION_KEY }}" \
           -e PROJECT_ROOT=/workspace \
           -v ${{ github.workspace }}:/workspace \
-          ghcr.io/epuerta9/station-security:latest \
+          ghcr.io/cloudshipai/station-security:latest \
           bash -c "stn sync default -i=false && stn agent run 'Infrastructure Security Auditor' 'Scan /workspace for infrastructure security issues, compliance violations, and misconfigurations. Focus on critical and high severity findings.' --tail"
 
     - name: Security Summary
