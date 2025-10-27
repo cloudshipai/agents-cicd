@@ -1,4 +1,4 @@
-name: Test New CloudShip Action
+name: Test CloudShip Action (No CloudShip Key)
 on:
   push:
     branches: [test-security-comments]
